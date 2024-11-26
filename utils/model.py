@@ -9,8 +9,8 @@ from matplotlib import pyplot as plt
 from copy import deepcopy
 import itertools
 
-from agent import Agent
-from display import display_position, display_board
+from utils.agent import Agent
+from utils.display import display_position, display_board
 
 
 class Environment:
@@ -371,7 +371,7 @@ class Maze(Environment):
                 else:
                     plt.arrow(state[1], state[0] , action[1], action[0], color='r', width=0.15, length_includes_head=True)
         plt.axis('off')
-        
+
     
 class Game(Environment):
     """Generic 2-player game. The adversary is part of the environment. The agent is player 1 or player -1."""
