@@ -22,29 +22,28 @@ class Agent:
     """
     
     def __init__(self, model, policy='random', player=None):
+        if type(policy) == str:
+            if policy == 'random':
+                policy = self.random_policy
+            elif policy == 'one_step':
+                policy = self.one_step_policy
+            else:
+                raise ValueError("The policy must be either 'random', 'one_step', or a custom policy.")            
+        if player is None:
+            if model.is_game():
+                player = model.player
+            else:
+                player = 1            
         self.model = model
         self.policy = policy
         self.player = player
-        if type(policy) == str:
-            if policy == 'random':
-                self.policy = self.random_policy
-            elif policy == 'one_step':
-                self.policy = self.one_step_policy
-            else:
-                raise ValueError('The policy must be either "random", "one_step", or a custom policy.')            
-        if player is None:
-            if model.is_game():
-                self.player = model.player
-            else:
-                self.player = 1            
             
     def get_actions(self, state):
         """Get available actions."""
         if self.model.is_game():
-            player, _ = state
-            if player != self.player:
-                return [None]
-        return self.model.get_actions(state)
+            return self.model.get_actions(state, self.player)
+        else:
+            return self.model.get_actions(state)
         
     def random_policy(self, state):
         """Random choice among possible actions."""
@@ -60,7 +59,7 @@ class Agent:
             raise ValueError('The one-step policy is applicable to games only.')
         player, board = state
         if player == self.player:
-            actions = self.model.get_actions(state)
+            actions = self.get_actions(state)
             # win move
             for action in actions:
                 next_state = self.model.get_next_state(state, action)
@@ -80,16 +79,15 @@ class Agent:
 
     def get_action(self, state):
         """Get selected action."""
-        action = None
         probs, actions = self.policy(state)
         if len(actions):
             i = np.random.choice(len(actions), p=probs)
             action = actions[i]
-        return action
-    
+        return action      
+         
     def get_episode(self, state=None, horizon=100):
         """Get the states and rewards for an episode, starting from some state."""
-        self.model.reinit_state(state)
+        self.model.reset(state)
         state = self.model.state
         states = [state] 
         reward = self.model.get_reward(state)
@@ -128,16 +126,15 @@ class OnlineEvaluation(Agent):
         Player for games (1 or -1, default = default player of the game).
     gamma : float
         Discount rate (in [0, 1], default = 1).
+    init_value : float
+        Initial value of the value function.
     """
     
-    def __init__(self, model, policy='random', player=None, gamma=1):
+    def __init__(self, model, policy='random', player=None, gamma=1, init_value=0):
         super(OnlineEvaluation, self).__init__(model, policy, player)   
         self.gamma = gamma 
-        self.init_values()
-
-    def init_values(self):
-        self.value = defaultdict(int) # value of a state (0 if unknown)
-        self.count = defaultdict(int) # count of a state (number of visits)
+        self.value = defaultdict(lambda: init_value) # value of a state
+        self.count = defaultdict(lambda: 0) # count of a state (number of visits)        
             
     def add_state(self, state):
         """Add a state if unknown."""
@@ -159,16 +156,15 @@ class OnlineEvaluation(Agent):
     def get_values(self, states=None):
         """Get the values of some states (default = all states).""" 
         if states is None:
-            try:
-                states = self.model.get_states()
-            except:
-                raise ValueError("Please specify some states.")
+            states = self.model.get_all_states()
+            if not len(states):
+                raise ValueError("The state space is too large. Please specify some states.")
         codes = [self.model.encode(state) for state in states]
         values = [self.value[code] for code in codes]
-        return np.array(values)
+        return values
     
     def get_best_actions(self, state):
-        """Get the best actions in some state, using the current value function.""" 
+        """Get the best actions in some state according to the value function.""" 
         actions = self.get_actions(state)
         if len(actions) > 1:
             values = []
@@ -179,12 +175,15 @@ class OnlineEvaluation(Agent):
                 # expected value
                 value = np.sum(np.array(probs) * (np.array(rewards) + self.gamma * np.array(next_values)))
                 values.append(value)
-            values = self.player * np.array(values)
-            actions = [actions[i] for i in np.flatnonzero(values==np.max(values))]
+            if self.player == 1:
+                best_value = max(values)
+            else:
+                best_value = min(values)
+            actions = [action for action, value in zip(actions, values) if value==best_value]
         return actions        
     
-    def improve_policy(self):
-        """Improve the policy based on the predicted value function."""
+    def get_policy(self):
+        """Get the best policy according to the value function."""
         def policy(state):
             actions = self.get_best_actions(state)
             if len(actions):
@@ -193,9 +192,23 @@ class OnlineEvaluation(Agent):
                 probs = []
             return probs, actions
         return policy    
+    
+    def randomize_policy(self, epsilon=0):
+        """Get the epsilon-greedy policy according to the value function."""
+        def policy(state):
+            actions = self.get_actions(state)
+            best_actions = self.get_best_actions(state)
+            probs = []
+            for action in actions:
+                prob = epsilon / len(actions)
+                if action in best_actions:
+                    prob += (1 - epsilon) / len(best_actions)
+                probs.append(prob)
+            return probs, actions
+        return policy
      
         
-class OnlineControl(Agent):
+class OnlineControl(OnlineEvaluation):
     """Online control. The agent interacts with the model and learns the best policy.
     
     Parameters
@@ -208,19 +221,12 @@ class OnlineControl(Agent):
         Player for games (1 or -1, default = default player of the game).
     gamma : float
         Discount rate (in [0, 1], default = 1).
-    horizon : int
-        Time horizon of each episode (default = 1000).
-    eps : float
-        Exploration rate (in [0, 1], default = 1). 
-        Probability to select a random action.
     init_value : float
         Initial value of the action-value function.
     """
     
-    def __init__(self, model, policy='random', player=None, gamma=1, eps=1, init_value=0):
-        super(OnlineControl, self).__init__(model, policy, player)  
-        self.gamma = gamma 
-        self.eps = eps 
+    def __init__(self, model, policy='random', player=None, gamma=1, init_value=0):
+        super(OnlineControl, self).__init__(model, policy, player, gamma)  
         self.action_value = defaultdict(lambda: defaultdict(lambda: init_value))
         self.action_count = defaultdict(lambda: defaultdict(lambda: 0))
             
@@ -230,31 +236,21 @@ class OnlineControl(Agent):
         return states
     
     def get_best_actions(self, state):
-        """Get the best actions in some state.""" 
+        """Get the best actions in some state according to the action-value function.""" 
         actions = self.get_actions(state)
-        if len(actions):
+        if len(actions) > 1:
             code = self.model.encode(state)
-            values = self.player * np.array([self.action_value[code][action] for action in actions])
-            actions = [actions[i] for i in np.flatnonzero(values==np.max(values))]
-        return actions
-
-    def get_best_action(self, state, randomized=False):
-        """Get the best action in some state.""" 
-        if randomized and np.random.random() < self.eps:
-            actions = self.get_actions(state)
-        else:
-            actions = self.get_best_actions(state)
-        return actions[np.random.choice(len(actions))]
-        
-    def get_policy(self):
-        """Get the best known policy.""" 
-        def policy(state):
-            actions = self.get_best_actions(state)
-            if len(actions):
-                probs = np.ones(len(actions)) / len(actions)
+            values = [self.action_value[code][action] for action in actions]
+            if self.player == 1:
+                best_value = max(values)
             else:
-                probs = []
-            return probs, actions
-        return policy
+                best_value = min(values)
+            actions = [action for action, value in zip(actions, values) if value==best_value]
+        return actions
     
-
+    def randomize_best_action(self, state, epsilon=0):
+        """Get the action of the epsilon-greedy policy."""
+        policy = self.randomize_policy(epsilon=epsilon)
+        probs, actions = policy(state)
+        i = np.random.choice(len(actions), p=probs)
+        return actions[i]

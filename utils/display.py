@@ -26,7 +26,8 @@ def display_position(image, position=None, positions=None, marker='o', marker_si
             image.set_offsets(np.vstack((x_, y_)).T)
             image.set_color(marker_color[i])
 
-        return anim.FuncAnimation(fig, update, frames=len(positions), interval=interval, repeat=False)
+        animation = anim.FuncAnimation(fig, update, frames=len(positions), interval=interval, repeat=False)
+        return animation
     elif position is not None:
         y, x = position
         ax.scatter(x, y, marker=marker, s=marker_size, c=marker_color)
@@ -51,7 +52,8 @@ def display_board(image, board=None, boards=None, marker1='x', marker2='o', mark
             y_, x_ = np.where(board_ < 0)
             player2.set_offsets(np.vstack((x_, y_)).T)
 
-        return anim.FuncAnimation(fig, update, frames=len(boards), interval=interval, repeat=False)
+        animation = anim.FuncAnimation(fig, update, frames=len(boards), interval=interval, repeat=False)
+        return animation
     elif board is not None:
         y, x = np.where(board > 0)
         ax.scatter(x, y, marker=marker1, s=marker_size, c=color1)
