@@ -32,7 +32,7 @@ class Environment:
         """Reset the state (default = initial state)."""
         if state is None:
             state = self.init_state()
-        elif state == 'random':
+        elif isinstance(state, str) and state == 'random':
             states = self.get_all_states()
             if len(states):
                 i = np.random.choice(len(states))
