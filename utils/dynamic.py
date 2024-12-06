@@ -146,21 +146,89 @@ class PolicyIteration(PolicyEvaluation):
         self.n_iter = n_iter
         super(PolicyIteration, self).__init__(model, policy, player, gamma, n_eval)  
     
-    def is_same_policy(self, policy):
-        """Test if the policy has changed."""
-        for state in self.states:
-            _, actions = policy(state)
-            _, actions_ = self.policy(state)
-            if set(actions) != set(actions_):
-                return False
-        return True
-    
     def get_optimal_policy(self):
         """Iterate evaluation and improvement, stop if no change."""
         for t in range(self.n_iter):
             self.evaluate_policy() 
             policy = self.get_policy()
-            if self.is_same_policy(policy):
-                return policy
             self.policy = policy
         return policy
+    
+
+class ValueIteration(PolicyEvaluation):
+    """Value iteration. 
+    
+    Parameters
+    ----------
+    model: object of class Environment
+        The model.
+    player: int
+        Player for games (1 or -1, default = default player of the game).        
+    gamma: float
+        Discount factor (between 0 and 1).
+    n_iter: int
+        Maximum number of value iterations.
+    """
+    
+    def __init__(self, model, player=None, gamma=1, n_iter=100):
+        agent = Agent(model, player=player)
+        policy = agent.policy
+        player = agent.player
+        super(ValueIteration, self).__init__(model, policy, player, gamma)  
+        self.n_iter = n_iter
+        
+    def get_optimal_policy(self):
+        """Get the optimal policy by iteration of Bellman's optimality equation."""
+        transitions = self.transitions
+        # Bellman's optimality equation
+        values = np.zeros(self.n_states)
+        for t in range(self.n_iter):
+            next_values = self.rewards + self.gamma * values
+            action_value = {action: transition.dot(next_values) for action, transition in self.transitions.items()}
+            values = np.zeros(self.n_states)
+            for i, state in enumerate(self.states):
+                if not self.model.is_terminal(state):
+                    actions = self.get_actions(state)
+                    if self.player == 1:
+                        values[i] = max([action_value[action][i] for action in actions])
+                    else:
+                        values[i] = min([action_value[action][i] for action in actions])
+        self.values = values
+        policy = self.get_policy()
+        return policy
+    
+    def get_perfect_players(self):
+        """Get perfect players for games, with the best response of the adversary."""
+        if not self.model.is_game():
+            raise ValueError("This method applies to games only.")
+        # get transitions for each player
+        actions = self.model.get_all_actions()
+        transitions = {action: sparse.lil_matrix((self.n_states, self.n_states)) for action in actions}
+        for i, state in enumerate(self.states):    
+            actions = self.model.get_available_actions(state)
+            for action in actions:
+                next_state = self.model.get_next_state(state, action)
+                j = self.get_state_id(next_state)
+                transitions[action][i, j] = 1
+        transitions = {action: sparse.csr_matrix(transition) for action, transition in transitions.items()}
+        self.transitions = transitions
+        # Bellman's optimality equation
+        values = np.zeros(self.n_states)
+        for t in range(self.n_iter):
+            next_values = self.rewards + self.gamma * values
+            action_value = {action: transition.dot(next_values) for action, transition in transitions.items()}
+            values = np.zeros(self.n_states)
+            for i, state in enumerate(self.states):
+                if not self.model.is_terminal(state):
+                    player, _ = state
+                    actions = self.model.get_available_actions(state)
+                    if player == 1:
+                        values[i] = max([action_value[action][i] for action in actions])
+                    else:
+                        values[i] = min([action_value[action][i] for action in actions])
+        self.values = values
+        # policies
+        policy = self.get_policy(self.player)
+        adversary_policy = self.get_policy(-self.player)
+        return policy, adversary_policy
+        
