@@ -1,3 +1,4 @@
-.idea
-.ipynb*
-__pycache__
+/venv-IA-318-Reinforcement-learning
+.idea/
+**/__pycache__/
+**checkpoints**
