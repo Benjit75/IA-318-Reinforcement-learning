@@ -233,17 +233,16 @@ class Walk(Environment):
 
     @staticmethod
     def display_policy(policy):
-        """Display the policy (take first action)."""
+        """Display the policy."""
         image = np.zeros(Walk.Size)
         plt.imshow(image, cmap='gray')
         states = Walk.get_all_states()
         for state in states:
-            _, actions = policy(state)
-            action = actions[0]
-            if action == (0, 0):
-                plt.scatter(state[1], state[0], s=100, c='b')
-            else:
-                plt.arrow(state[1], state[0] , action[1], action[0], color='r', width=0.15, length_includes_head=True)
+            probs, actions = policy(state)
+            for prob, action in zip(probs, actions):
+                scale = (prob + 1) / 2
+                plt.arrow(state[1], state[0] , scale * action[1], scale * action[0], 
+                          color='r', width=0.1, length_includes_head=True)
         plt.axis('off')
 
 
@@ -364,14 +363,13 @@ class Maze(Environment):
         plt.imshow(image, cmap='gray')
         for state in states:
             if not Maze.is_terminal(state):
-                _, actions = policy(state)
-                action = actions[0]
-                if action == (0,0):
-                    plt.scatter(state[1], state[0], s=100, c='b')
-                else:
-                    plt.arrow(state[1], state[0] , action[1], action[0], color='r', width=0.15, length_includes_head=True)
+                probs, actions = policy(state)
+                for prob, action in zip(probs, actions):
+                    scale = 0.8 * (prob + 1) / 2
+                    plt.arrow(state[1], state[0] , scale * action[1], scale * action[0], 
+                              color='r', width=0.1, length_includes_head=True)
         plt.axis('off')
-
+        
     
 class Game(Environment):
     """Generic 2-player game. The adversary is part of the environment. The agent is player 1 or player -1."""

@@ -91,7 +91,7 @@ class Agent:
         state = self.model.state
         states = [state] 
         reward = self.model.get_reward(state)
-        rewards = [reward]
+        rewards = []
         stop = self.model.is_terminal(state)
         if not stop:
             for t in range(horizon):

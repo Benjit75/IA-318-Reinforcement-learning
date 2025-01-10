@@ -4,10 +4,13 @@
 November 2024
 @author: Thomas Bonald <bonald@enst.fr>
 """
+from typing import Any, Callable, Optional, Tuple, Union
+
 import numpy as np
 from scipy import sparse
 
 from utils.agent import Agent
+from utils.model import Game
 
 
 class PolicyEvaluation:
@@ -26,17 +29,23 @@ class PolicyEvaluation:
     n_eval: int
         Number of iterations of Bellman's equation for policy evaluation.
     """
-    def __init__(self, model, policy='random', player=None, gamma=1, n_eval=100):
+    def __init__(self, model: Game, policy: Union[str, Callable[[Any], Tuple]]='random',
+                 player: Optional[int]=None, gamma: float=1., n_eval: int=100):
         self.model = model
         agent = Agent(model, policy, player)
         self.policy = agent.policy
         self.player = agent.player
         self.gamma = gamma
         self.n_eval = n_eval
+        self.n_states = 0
+        self.state_id = {}
+        self.states = []
         self.index_states()
         if self.n_states == 0:
             raise ValueError("Not applicable. The state space is too large.")
+        self.rewards = np.zeros(self.n_states)
         self.get_rewards()
+        self.transitions = {}
         self.get_transitions()
         
     def index_states(self):
@@ -45,7 +54,7 @@ class PolicyEvaluation:
         self.n_states = len(self.states)
         self.state_id = {self.model.encode(state): i for i, state in enumerate(self.states)}
         
-    def get_state_id(self, state):
+    def get_state_id(self, state: Any) -> int:
         return self.state_id[self.model.encode(state)]
 
     def get_rewards(self):
@@ -55,7 +64,7 @@ class PolicyEvaluation:
             rewards[i] = self.model.get_reward(state)
         self.rewards = rewards
         
-    def get_actions(self, state, player=None):
+    def get_actions(self, state: Any, player: Optional[int]=None) -> Union[list[None], list]:
         if self.model.is_game():
             if player is None:
                 player = self.player
